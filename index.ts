@@ -6,6 +6,7 @@ import multer from "multer";
 import multerS3 from "multer-s3";
 import Path from "path";
 import { PrismaClient } from "@prisma/client";
+import { v4 as uuidv4 } from "uuid";
 
 const client = new PrismaClient();
 
@@ -20,7 +21,7 @@ const s3Config = new S3Client({
 export const upload = multer({
   storage: multerS3({
     s3: s3Config,
-    bucket: "logichain-image-server-2",
+    bucket: process.env.AWS_S3_BUCKET!,
     key: (req, file, cb) => {
       cb(
         null,
@@ -79,12 +80,39 @@ app.get("/:id", async (req, res) => {
 // deviceId: 1 -> deviceAddress
 app.post("/", upload.single("image"), async (req, res) => {
   try {
+    const address = req.headers["device-address"] as string;
+
     const file = req.file as Express.MulterS3.File;
+
+    if (!address) {
+      return res.status(400).json({
+        message: "Wrong device address.",
+      });
+    }
+
+    const device = await client.device.findUnique({
+      where: {
+        address,
+      },
+    });
+
+    if (!device) {
+      return res.status(400).json({
+        message: "Not exist device.",
+      });
+    }
+
+    const uuid = uuidv4().split("-");
+
+    let hash: string = "";
+
+    uuid.forEach((v) => (hash += v));
 
     const image = await client.image.create({
       data: {
         url: file.location,
-        deviceId: 1,
+        deviceId: device.id,
+        hash,
       },
     });
 
